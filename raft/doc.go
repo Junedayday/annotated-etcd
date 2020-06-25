@@ -16,19 +16,27 @@
 Package raft sends and receives messages in the Protocol Buffer format
 defined in the raftpb package.
 
+transl. raft包的消息格式保存在raftpb包中
+
 Raft is a protocol with which a cluster of nodes can maintain a replicated state machine.
 The state machine is kept in sync through the use of a replicated log.
 For more details on Raft, see "In Search of an Understandable Consensus Algorithm"
 (https://raft.github.io/raft.pdf) by Diego Ongaro and John Ousterhout.
 
+transl. raft是一种用于集群中机器间复制的协议，也就是共识协议。实现方式是日志复制。链接为raft协议的相关论文
+
 A simple example application, _raftexample_, is also available to help illustrate
 how to use this package in practice:
 https://github.com/etcd-io/etcd/tree/master/contrib/raftexample
+
+transl. contrib下提供了一个示例，有兴趣可以看看
 
 Usage
 
 The primary object in raft is a Node. You either start a Node from scratch
 using raft.StartNode or start a Node from some initial state using raft.RestartNode.
+
+transl. Node是raft的基本单元，初始状态为StartNode
 
 To start a node from scratch:
 
@@ -42,6 +50,8 @@ To start a node from scratch:
     MaxInflightMsgs: 256,
   }
   n := raft.StartNode(c, []raft.Peer{{ID: 0x02}, {ID: 0x03}})
+
+transl. 如何初始化一个Node
 
 To restart a node from previous state:
 
@@ -65,6 +75,8 @@ To restart a node from previous state:
   // restart raft without peer information.
   // peer information is already included in the storage.
   n := raft.RestartNode(c)
+
+transl. 如何从上一个状态重启Node
 
 Now that you are holding onto a Node you have a few responsibilities:
 

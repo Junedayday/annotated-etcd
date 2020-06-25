@@ -53,6 +53,8 @@ etcd_build() {
 
 	# Static compilation is useful when etcd is run in a container. $GO_BUILD_FLAGS is OK
 	# shellcheck disable=SC2086
+	# 用静态编译的方式，对etcd运行在容器中很有帮助，会把一些依赖的lib库也打包到二进制文件中
+	# 比如说可以用 go build --tags static 这种命令
 	CGO_ENABLED=0 go build $GO_BUILD_FLAGS \
 		-installsuffix cgo \
 		-ldflags "$GO_LDFLAGS" \

@@ -371,6 +371,7 @@ type securityConfig struct {
 
 // NewConfig creates a new Config populated with default values.
 func NewConfig() *Config {
+	// Tip: url.Parse用来解析url很便捷，内部是一个语法解析的实现
 	lpurl, _ := url.Parse(DefaultListenPeerURLs)
 	apurl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
 	lcurl, _ := url.Parse(DefaultListenClientURLs)

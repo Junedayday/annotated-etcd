@@ -20,6 +20,9 @@
 // This package should NOT be extended or modified in any way; to modify the
 // etcd binary, work in the `go.etcd.io/etcd/etcdmain` package.
 //
+
+// transl. 这个main函数是包装 etcdmain ，这样在用 go get go.etcd.io/etcd 命令时，会自动编译etcd二进制文件
+
 package main
 
 import "go.etcd.io/etcd/etcdmain"

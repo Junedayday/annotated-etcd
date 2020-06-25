@@ -47,9 +47,11 @@ func RegisterInterruptHandler(h InterruptHandler) {
 // HandleInterrupts calls the handler functions on receiving a SIGINT or SIGTERM.
 func HandleInterrupts(lg *zap.Logger) {
 	notifier := make(chan os.Signal, 1)
+	// 包括中止或者
 	signal.Notify(notifier, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
+		// 接收到挂掉的消息，进行下面的处理
 		sig := <-notifier
 
 		interruptRegisterMu.Lock()
@@ -65,6 +67,7 @@ func HandleInterrupts(lg *zap.Logger) {
 			plog.Noticef("received %v signal, shutting down...", sig)
 		}
 
+		// hook函数在这里调用
 		for _, h := range ihs {
 			h()
 		}

@@ -55,11 +55,15 @@ var (
 
 func startEtcdOrProxyV2() {
 	grpc.EnableTracing = false
+	
+	// Tip： 阅读这一块代码你记得一点，这里为了做日志打印的兼容，有很多if-else的处理，代码量其实不多
 
+	// Tip: 加载配置，分为两步 - 分配默认参数，覆盖自定义参数
 	cfg := newConfig()
 	defaultInitialCluster := cfg.ec.InitialCluster
 
 	err := cfg.parse(os.Args[1:])
+	// 日志默认为uber的zap
 	lg := cfg.ec.GetLogger()
 	if err != nil {
 		if lg != nil {
@@ -87,6 +91,7 @@ func startEtcdOrProxyV2() {
 		plog.Infof("setting maximum number of CPUs to %d, total number of available CPUs is %d", runtime.GOMAXPROCS(0), runtime.NumCPU())
 	}
 
+	// 退出前进行一次刷盘，把日志保存下来
 	defer func() {
 		logger := cfg.ec.GetLogger()
 		if logger != nil {
@@ -94,6 +99,7 @@ func startEtcdOrProxyV2() {
 		}
 	}()
 
+	// UpdateDefaultClusterFromName 是更新参数值中的hostname
 	defaultHost, dhErr := (&cfg.ec).UpdateDefaultClusterFromName(defaultInitialCluster)
 	if defaultHost != "" {
 		if lg != nil {
@@ -113,6 +119,7 @@ func startEtcdOrProxyV2() {
 		}
 	}
 
+	// Tip: 保存数据的目录
 	if cfg.ec.Dir == "" {
 		cfg.ec.Dir = fmt.Sprintf("%v.etcd", cfg.ec.Name)
 		if lg != nil {
@@ -125,9 +132,11 @@ func startEtcdOrProxyV2() {
 		}
 	}
 
+	// Tip: 定义了两个channel，从字面意思来看是停止和错误
 	var stopped <-chan struct{}
 	var errc <-chan error
 
+	// Tip: 检查data目录中的文件的具体类型,分为empty空，member成员，proxy代理三种
 	which := identifyDataDirOrDie(cfg.ec.GetLogger(), cfg.ec.Dir)
 	if which != dirEmpty {
 		if lg != nil {
@@ -139,10 +148,13 @@ func startEtcdOrProxyV2() {
 		} else {
 			plog.Noticef("the server is already initialized as %v before, starting as etcd %v...", which, which)
 		}
+		// 非初始化的情况下(数据文件夹中有数据)，会判断其类型，进行对应的操作
 		switch which {
 		case dirMember:
+			// Tip： 启动成员模式，注意，这里需要的参数只有 embed.Config 那部分
 			stopped, errc, err = startEtcd(&cfg.ec)
 		case dirProxy:
+			// Tip： 启动代理模式，这个模式用的不多，略读
 			err = startProxy(cfg)
 		default:
 			if lg != nil {
@@ -155,9 +167,12 @@ func startEtcdOrProxyV2() {
 			}
 		}
 	} else {
+		// 初始化时，data目录为空，进入这里，大部分和之前一样
 		shouldProxy := cfg.isProxy()
 		if !shouldProxy {
+			// Tip: 关键入口1-开始运行普通模式，注意入参只需要ec部分
 			stopped, errc, err = startEtcd(&cfg.ec)
+			// Tip: 这里有个特别的情况，当服务发现报错"集群已满"时,并且配置可以回滚为代理(shouldProxy)，那么就这个etcd就转变成代理
 			if derr, ok := err.(*etcdserver.DiscoveryError); ok && derr.Err == v2discovery.ErrFullCluster {
 				if cfg.shouldFallbackToProxy() {
 					if lg != nil {
@@ -178,11 +193,13 @@ func startEtcdOrProxyV2() {
 			}
 		}
 		if shouldProxy {
+			// Tip: 关键入口2-开始运行代理
 			err = startProxy(cfg)
 		}
 	}
 
 	if err != nil {
+		// 服务发现类报错，打印后直接退出
 		if derr, ok := err.(*etcdserver.DiscoveryError); ok {
 			switch derr.Err {
 			case v2discovery.ErrDuplicateID:
@@ -238,6 +255,7 @@ func startEtcdOrProxyV2() {
 			os.Exit(1)
 		}
 
+		// 一些初始参数设置错误，或者未设置，打印错误并退出
 		if strings.Contains(err.Error(), "include") && strings.Contains(err.Error(), "--initial-cluster") {
 			if lg != nil {
 				lg.Warn("failed to start", zap.Error(err))
@@ -274,6 +292,7 @@ func startEtcdOrProxyV2() {
 		}
 	}
 
+	// 当程序退出时，触发注册的hook函数
 	osutil.HandleInterrupts(lg)
 
 	// At this point, the initialization of etcd is done.
@@ -281,8 +300,11 @@ func startEtcdOrProxyV2() {
 	// for accepting connections. The etcd instance should be
 	// joined with the cluster and ready to serve incoming
 	// connections.
+	
+	// Tip: deamon守护相关
 	notifySystemd(lg)
 
+	// 接收两个channel的信息
 	select {
 	case lerr := <-errc:
 		// fatal out on listener errors
@@ -303,8 +325,10 @@ func startEtcd(cfg *embed.Config) (<-chan struct{}, <-chan error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// 把etcd关闭的函数作为钩子hook，
 	osutil.RegisterInterruptHandler(e.Close)
 	select {
+	// Tip: 监听两个channel，要么Ready就绪，要么Stop停止
 	case <-e.Server.ReadyNotify(): // wait for e.Server to join the cluster
 	case <-e.Server.StopNotify(): // publish aborted from 'ErrStopped'
 	}
@@ -329,6 +353,8 @@ func startProxy(cfg *config) error {
 	clientTLSInfo.InsecureSkipVerify = cfg.ec.ClientAutoTLS
 	cfg.ec.PeerTLSInfo.InsecureSkipVerify = cfg.ec.PeerAutoTLS
 
+	// 三种超时时间，用在2个地方：客户端和服务端的通信
+	
 	pt, err := transport.NewTimeoutTransport(
 		clientTLSInfo,
 		time.Duration(cfg.cp.ProxyDialTimeoutMs)*time.Millisecond,
@@ -498,9 +524,10 @@ func startProxy(cfg *config) error {
 
 		return clientURLs
 	}
+	// proxy分为读写和只读两种
 	ph := httpproxy.NewHandler(pt, uf, time.Duration(cfg.cp.ProxyFailureWaitMs)*time.Millisecond, time.Duration(cfg.cp.ProxyRefreshIntervalMs)*time.Millisecond)
 	ph = embed.WrapCORS(cfg.ec.CORS, ph)
-
+	
 	if cfg.isReadonlyProxy() {
 		ph = httpproxy.NewReadonlyHandler(ph)
 	}
@@ -603,11 +630,17 @@ func identifyDataDirOrDie(lg *zap.Logger, dir string) dirType {
 
 func checkSupportArch() {
 	// TODO qualify arm64
+	
+	// Tip 可以通过手动在编译命令时添加 GOOS,GOARCH,来实现交叉编译
+	// 比如，我在mac上编译，默认生成的是 darwin/amd64,如果要生成linux的二进制文件，那就要用到交叉编译
+	// GOARCH=amd64 GOOS=linux go build
 	if runtime.GOARCH == "amd64" || runtime.GOARCH == "ppc64le" {
 		return
 	}
 	// unsupported arch only configured via environment variable
 	// so unset here to not parse through flag
+	// Tip 通过设置环境变量来避免etcd运行在一些不稳定的
+	// Setenv/Unsetenv/LookupEnv等对环境变量常见的操作
 	defer os.Unsetenv("ETCD_UNSUPPORTED_ARCH")
 	if env, ok := os.LookupEnv("ETCD_UNSUPPORTED_ARCH"); ok && env == runtime.GOARCH {
 		fmt.Printf("running etcd on unsupported architecture %q since ETCD_UNSUPPORTED_ARCH is set\n", env)

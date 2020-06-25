@@ -92,7 +92,10 @@ type peerListener struct {
 // StartEtcd launches the etcd server and HTTP handlers for client/server communication.
 // The returned Etcd.Server is not guaranteed to have joined the cluster. Wait
 // on the Etcd.Server.ReadyNotify() channel to know when it completes and is ready for use.
+
+// transl. StartEtcd开启服务端，提供客户端和服务端的通信；返回的Server未保证已经加入集群，需要通过监听ReadyNotify这个channel
 func StartEtcd(inCfg *Config) (e *Etcd, err error) {
+	// Validate验证配置参数的有效性，一般不用细看，遇到问题再去排查
 	if err = inCfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -104,7 +107,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 			return
 		}
 		if !serving {
-			// errored before starting gRPC server for serveCtx.serversC
+			// 即初始化未成功，异常退出时，关闭上下文channel
 			for _, sctx := range e.sctxs {
 				close(sctx.serversC)
 			}
@@ -119,6 +122,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 			zap.Strings("listen-peer-urls", e.cfg.getLPURLs()),
 		)
 	}
+	// Tip: 配置peer监听，里面主要包括了通信加密和rafthttp，暂时不看
 	if e.Peers, err = configurePeerListeners(cfg); err != nil {
 		return e, err
 	}
@@ -129,10 +133,11 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 			zap.Strings("listen-client-urls", e.cfg.getLCURLs()),
 		)
 	}
+	// Tip: 配置客户端监听，里面主要包括了各类通信协议的支持
 	if e.sctxs, err = configureClientListeners(cfg); err != nil {
 		return e, err
 	}
-
+	
 	for _, sctx := range e.sctxs {
 		e.Clients = append(e.Clients, sctx.l)
 	}
@@ -141,6 +146,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		urlsmap types.URLsMap
 		token   string
 	)
+	// 查看有没有初始化过member相关信息,根据isMemberInitialized中的路径
 	memberInitialized := true
 	if !isMemberInitialized(cfg) {
 		memberInitialized = false
@@ -150,17 +156,17 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		}
 	}
 
-	// AutoCompactionRetention defaults to "0" if not set.
 	if len(cfg.AutoCompactionRetention) == 0 {
 		cfg.AutoCompactionRetention = "0"
 	}
+	// Tip: compaction压缩模式，分为两种：周期性和版本
 	autoCompactionRetention, err := parseCompactionRetention(cfg.AutoCompactionMode, cfg.AutoCompactionRetention)
 	if err != nil {
 		return e, err
 	}
-
+	// 实验性的参数
 	backendFreelistType := parseBackendFreelistType(cfg.ExperimentalBackendFreelistType)
-
+	// 大量的配置参数
 	srvcfg := etcdserver.ServerConfig{
 		Name:                       cfg.Name,
 		ClientURLs:                 cfg.ACUrls,
@@ -209,23 +215,22 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		CompactionBatchLimit:       cfg.ExperimentalCompactionBatchLimit,
 	}
 	print(e.cfg.logger, *cfg, srvcfg, memberInitialized)
+	// Tip: 调用etcdserver包，新建server
 	if e.Server, err = etcdserver.NewServer(srvcfg); err != nil {
 		return e, err
 	}
 
-	// buffer channel so goroutines on closed connections won't wait forever
+	// 为了error的channel不阻塞，这里设定了channel的大小
 	e.errc = make(chan error, len(e.Peers)+len(e.Clients)+2*len(e.sctxs))
 
-	// newly started member ("memberInitialized==false")
-	// does not need corruption check
+	// 新开启的server，进行hashkv验证，不通过则退出
 	if memberInitialized {
 		if err = e.Server.CheckInitialHashKV(); err != nil {
-			// set "EtcdServer" to nil, so that it does not block on "EtcdServer.Close()"
-			// (nothing to close since rafthttp transports have not been started)
 			e.Server = nil
 			return e, err
 		}
 	}
+	// 开始Server,并开启peers/clients/metrics
 	e.Server.Start()
 
 	if err = e.servePeers(); err != nil {
@@ -514,6 +519,7 @@ func configurePeerListeners(cfg *Config) (peers []*peerListener, err error) {
 			}
 		}
 		peers[i] = &peerListener{close: func(context.Context) error { return nil }}
+		// 这里的rafthttp有涉及到raft相关，后面专门研究
 		peers[i].Listener, err = rafthttp.NewListener(u, &cfg.PeerTLSInfo)
 		if err != nil {
 			return nil, err

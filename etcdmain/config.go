@@ -95,6 +95,7 @@ type configFlags struct {
 }
 
 func newConfig() *config {
+	// Tip: 这里生成的Config都是采用默认值的
 	cfg := &config{
 		ec: *embed.NewConfig(),
 		cp: configProxy{
@@ -123,6 +124,8 @@ func newConfig() *config {
 		),
 	}
 
+	// Tip: 输入的命令行不符合规则时，打印出对应的使用方法,自定义的参数都是在这里传进来的
+	// Tip: flag包很难满足复杂场景，这里不得不提一个package：github.com/spf13/cobra，在k8s等其余项目中也有大量应用
 	fs := cfg.cf.flagSet
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, usageline)
@@ -130,50 +133,75 @@ func newConfig() *config {
 
 	fs.StringVar(&cfg.configFile, "config-file", "", "Path to the server configuration file. Note that if a configuration file is provided, other command line flags and environment variables will be ignored.")
 
+	// Tip: 自身相关的参数
 	// member
 	fs.StringVar(&cfg.ec.Dir, "data-dir", cfg.ec.Dir, "Path to the data directory.")
 	fs.StringVar(&cfg.ec.WalDir, "wal-dir", cfg.ec.WalDir, "Path to the dedicated wal directory.")
+	// Tip: peer是同伴的意思，所以这个url是给etcd之间通信用的
 	fs.Var(
 		flags.NewUniqueURLsWithExceptions(embed.DefaultListenPeerURLs, ""),
 		"listen-peer-urls",
 		"List of URLs to listen on for peer traffic.",
 	)
+	// Tip: 这个url是给客户端通信用的
 	fs.Var(
-		flags.NewUniqueURLsWithExceptions(embed.DefaultListenClientURLs, ""), "listen-client-urls",
+		flags.NewUniqueURLsWithExceptions(embed.DefaultListenClientURLs, ""),
+		"listen-client-urls",
 		"List of URLs to listen on for client traffic.",
 	)
+	// Tip: metrics是prometheus监控采集的原始数据，用于监控，可以看到默认不开启
 	fs.Var(
 		flags.NewUniqueURLsWithExceptions("", ""),
 		"listen-metrics-urls",
 		"List of URLs to listen on for the metrics and health endpoints.",
 	)
+	// Tip: 下面的参数，现根据字面意思，大致理解下，后续到具体使用时再了解
+	// snapshot保存的最大数量
 	fs.UintVar(&cfg.ec.MaxSnapFiles, "max-snapshots", cfg.ec.MaxSnapFiles, "Maximum number of snapshot files to retain (0 is unlimited).")
+	// wals文件的最大数量
 	fs.UintVar(&cfg.ec.MaxWalFiles, "max-wals", cfg.ec.MaxWalFiles, "Maximum number of wal files to retain (0 is unlimited).")
+	// 给这个etcd起别名，方便阅读
 	fs.StringVar(&cfg.ec.Name, "name", cfg.ec.Name, "Human-readable name for this member.")
+	// 提交一定次数后，触发保存快照,默认100000
 	fs.Uint64Var(&cfg.ec.SnapshotCount, "snapshot-count", cfg.ec.SnapshotCount, "Number of committed transactions to trigger a snapshot to disk.")
+	// 心跳频率ms，默认100ms
 	fs.UintVar(&cfg.ec.TickMs, "heartbeat-interval", cfg.ec.TickMs, "Time (in milliseconds) of a heartbeat interval.")
+	// 超过这个时间后，进行重新选举，默认1000ms
 	fs.UintVar(&cfg.ec.ElectionMs, "election-timeout", cfg.ec.ElectionMs, "Time (in milliseconds) for an election to timeout.")
+	// 加速初次选举leader的超时，主要适合跨数据中心或大型集群的场景，比如设置超时为10s，会在等待8s后就开始选举
 	fs.BoolVar(&cfg.ec.InitialElectionTickAdvance, "initial-election-tick-advance", cfg.ec.InitialElectionTickAdvance, "Whether to fast-forward initial election ticks on boot for faster election.")
+	// 后端超过指定大小后告警，默认为2 * 1024 * 1024 * 1024=2GB
 	fs.Int64Var(&cfg.ec.QuotaBackendBytes, "quota-backend-bytes", cfg.ec.QuotaBackendBytes, "Raise alarms when backend size exceeds the given quota. 0 means use the default quota.")
+	// 后端事务的刷盘flush的间隔，默认 100 * time.Millisecond
 	fs.DurationVar(&cfg.ec.BackendBatchInterval, "backend-batch-interval", cfg.ec.BackendBatchInterval, "BackendBatchInterval is the maximum time before commit the backend transaction.")
+	// 后端事务执行多少次后刷盘，默认10000
 	fs.IntVar(&cfg.ec.BackendBatchLimit, "backend-batch-limit", cfg.ec.BackendBatchLimit, "BackendBatchLimit is the maximum operations before commit the backend transaction.")
+	// 一个事务中最多可以执行多少个指令，默认10000
 	fs.UintVar(&cfg.ec.MaxTxnOps, "max-txn-ops", cfg.ec.MaxTxnOps, "Maximum number of operations permitted in a transaction.")
+	// 客户端请求的大小，默认1.5 * 1024 * 1024=1.5MB
 	fs.UintVar(&cfg.ec.MaxRequestBytes, "max-request-bytes", cfg.ec.MaxRequestBytes, "Maximum client request size in bytes the server will accept.")
+	// gRPC KeepAlive 的最短等待时间，默认5s
 	fs.DurationVar(&cfg.ec.GRPCKeepAliveMinTime, "grpc-keepalive-min-time", cfg.ec.GRPCKeepAliveMinTime, "Minimum interval duration that a client should wait before pinging server.")
+	// gRPC KeepAlive 对连接探活的周期，默认2h
 	fs.DurationVar(&cfg.ec.GRPCKeepAliveInterval, "grpc-keepalive-interval", cfg.ec.GRPCKeepAliveInterval, "Frequency duration of server-to-client ping to check if a connection is alive (0 to disable).")
+	// gRPC KeepAlive 的超时时间，默认20s
 	fs.DurationVar(&cfg.ec.GRPCKeepAliveTimeout, "grpc-keepalive-timeout", cfg.ec.GRPCKeepAliveTimeout, "Additional duration of wait before closing a non-responsive connection (0 to disable).")
-
+	
+	// Tip: 集群相关的参数
 	// clustering
+	// Tip: initial-advertise-peer-urls集群所有节点的监听peer的端口
 	fs.Var(
 		flags.NewUniqueURLsWithExceptions(embed.DefaultInitialAdvertisePeerURLs, ""),
 		"initial-advertise-peer-urls",
 		"List of this member's peer URLs to advertise to the rest of the cluster.",
 	)
+	// Tip: advertise-client-urls集群所有节点的监听client的端口
 	fs.Var(
 		flags.NewUniqueURLsWithExceptions(embed.DefaultAdvertiseClientURLs, ""),
 		"advertise-client-urls",
 		"List of this member's client URLs to advertise to the public.",
 	)
+	// Tip: 通过服务发现方式启动ETCD集群，依赖另一个etcd集群，下面这些参数到具体实现时再分析
 	fs.StringVar(&cfg.ec.Durl, "discovery", cfg.ec.Durl, "Discovery URL used to bootstrap the cluster.")
 	fs.Var(cfg.cf.fallback, "discovery-fallback", fmt.Sprintf("Valid values include %q", cfg.cf.fallback.Valids()))
 
@@ -184,11 +212,16 @@ func newConfig() *config {
 	fs.StringVar(&cfg.ec.InitialClusterToken, "initial-cluster-token", cfg.ec.InitialClusterToken, "Initial cluster token for the etcd cluster during bootstrap.")
 	fs.Var(cfg.cf.clusterState, "initial-cluster-state", "Initial cluster state ('new' or 'existing').")
 
+	// 严格控制重新加载配置
 	fs.BoolVar(&cfg.ec.StrictReconfigCheck, "strict-reconfig-check", cfg.ec.StrictReconfigCheck, "Reject reconfiguration requests that would cause quorum loss.")
+	// 是否兼容v2的客户端请求，默认关闭
 	fs.BoolVar(&cfg.ec.EnableV2, "enable-v2", cfg.ec.EnableV2, "Accept etcd V2 client requests.")
+	// 在投票前先进行一轮检查，看是否满足选举的最小数量要求，在3.5后会默认开启
 	fs.BoolVar(&cfg.ec.PreVote, "pre-vote", cfg.ec.PreVote, "Enable to run an additional Raft election phase.")
 
+	// Tip: etcd的代理相关参数，作为反向代理到其它etcd，有只读和读写两种模式
 	// proxy
+	// proxy相关参数暂不细看，主要是一些等待、超时相关的参数
 	fs.Var(cfg.cf.proxy, "proxy", fmt.Sprintf("Valid values include %q", cfg.cf.proxy.Valids()))
 	fs.UintVar(&cfg.cp.ProxyFailureWaitMs, "proxy-failure-wait", cfg.cp.ProxyFailureWaitMs, "Time (in milliseconds) an endpoint will be held in a failed state.")
 	fs.UintVar(&cfg.cp.ProxyRefreshIntervalMs, "proxy-refresh-interval", cfg.cp.ProxyRefreshIntervalMs, "Time (in milliseconds) of the endpoints refresh interval.")
@@ -196,6 +229,7 @@ func newConfig() *config {
 	fs.UintVar(&cfg.cp.ProxyWriteTimeoutMs, "proxy-write-timeout", cfg.cp.ProxyWriteTimeoutMs, "Time (in milliseconds) for a write to timeout.")
 	fs.UintVar(&cfg.cp.ProxyReadTimeoutMs, "proxy-read-timeout", cfg.cp.ProxyReadTimeoutMs, "Time (in milliseconds) for a read to timeout.")
 
+	// Tip: 安全相关的参数，包括证书之类的，暂不细看
 	// security
 	fs.StringVar(&cfg.ec.ClientTLSInfo.CertFile, "cert-file", "", "Path to the client server TLS cert file.")
 	fs.StringVar(&cfg.ec.ClientTLSInfo.KeyFile, "key-file", "", "Path to the client server TLS key file.")
@@ -222,6 +256,7 @@ func newConfig() *config {
 	)
 	fs.Var(flags.NewUniqueStringsValue("*"), "host-whitelist", "Comma-separated acceptable hostnames from HTTP client requests, if server is not secure (empty means allow all).")
 
+	// Tip: 日志打印默认info级别，3.5之后会有大量变动
 	// logging
 	fs.StringVar(&cfg.ec.Logger, "logger", "capnslog", "Specify 'zap' for structured logging or 'capnslog'. WARN: 'capnslog' is being deprecated in v3.5.")
 	fs.Var(flags.NewUniqueStringsValue(embed.DefaultLogOutput), "log-output", "[TO BE DEPRECATED IN v3.5] use '--log-outputs'.")
@@ -231,24 +266,31 @@ func newConfig() *config {
 	fs.StringVar(&cfg.ec.LogPkgLevels, "log-package-levels", "", "[TO BE DEPRECATED IN v3.5] Specify a particular log level for each etcd package (eg: 'etcdmain=CRITICAL,etcdserver=DEBUG').")
 
 	// version
+	// 打印版本并退出
 	fs.BoolVar(&cfg.printVersion, "version", false, "Print the version and exit.")
 
+	// 压缩归档的参数
 	fs.StringVar(&cfg.ec.AutoCompactionRetention, "auto-compaction-retention", "0", "Auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
 	fs.StringVar(&cfg.ec.AutoCompactionMode, "auto-compaction-mode", "periodic", "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
 
 	// pprof profiler via HTTP
+	// 用pprof进行性能监控
 	fs.BoolVar(&cfg.ec.EnablePprof, "enable-pprof", false, "Enable runtime profiling data via HTTP server. Address is at client URL + \"/debug/pprof/\"")
 
 	// additional metrics
+	// 监控metrics，默认basic，可以设置为extensive来增加histogram图，用于统计
 	fs.StringVar(&cfg.ec.Metrics, "metrics", cfg.ec.Metrics, "Set level of detail for exported metrics, specify 'extensive' to include histogram metrics")
 
 	// auth
+	// 认证参数
 	fs.StringVar(&cfg.ec.AuthToken, "auth-token", cfg.ec.AuthToken, "Specify auth token specific options.")
 	fs.UintVar(&cfg.ec.BcryptCost, "bcrypt-cost", cfg.ec.BcryptCost, "Specify bcrypt algorithm cost factor for auth password hashing.")
 
 	// gateway
+	// 开启gRPC网关
 	fs.BoolVar(&cfg.ec.EnableGRPCGateway, "enable-grpc-gateway", true, "Enable GRPC gateway.")
 
+	// 实验相关的参数，暂时不分析
 	// experimental
 	fs.BoolVar(&cfg.ec.ExperimentalInitialCorruptCheck, "experimental-initial-corrupt-check", cfg.ec.ExperimentalInitialCorruptCheck, "Enable to check data corruption before serving any client/peer traffic.")
 	fs.DurationVar(&cfg.ec.ExperimentalCorruptCheckTime, "experimental-corrupt-check-time", cfg.ec.ExperimentalCorruptCheckTime, "Duration of time between cluster corruption check passes.")
@@ -257,10 +299,12 @@ func newConfig() *config {
 	fs.BoolVar(&cfg.ec.ExperimentalEnableLeaseCheckpoint, "experimental-enable-lease-checkpoint", false, "Enable to persist lease remaining TTL to prevent indefinite auto-renewal of long lived leases.")
 	fs.IntVar(&cfg.ec.ExperimentalCompactionBatchLimit, "experimental-compaction-batch-limit", cfg.ec.ExperimentalCompactionBatchLimit, "Sets the maximum revisions deleted in each compaction batch.")
 
+	// 不安全的参数
 	// unsafe
 	fs.BoolVar(&cfg.ec.UnsafeNoFsync, "unsafe-no-fsync", false, "Disables fsync, unsafe, will cause data loss.")
 	fs.BoolVar(&cfg.ec.ForceNewCluster, "force-new-cluster", false, "Force to create a new one member cluster.")
 
+	// 即已经弃用的flag，会提示已经弃用，程序仍继续运行
 	// ignored
 	for _, f := range cfg.ignored {
 		fs.Var(&flags.IgnoredFlag{Name: f}, f, "")
@@ -269,6 +313,7 @@ func newConfig() *config {
 }
 
 func (cfg *config) parse(arguments []string) error {
+	// 解析flag参数
 	perr := cfg.cf.flagSet.Parse(arguments)
 	switch perr {
 	case nil:
@@ -295,10 +340,12 @@ func (cfg *config) parse(arguments []string) error {
 	// This env variable must be parsed separately
 	// because we need to determine whether to use or
 	// ignore the env variables based on if the config file is set.
+	// 加载配置文件，如果没有设置，会去读取环境变量 ETCD_CONFIG_FILE
 	if cfg.configFile == "" {
 		cfg.configFile = os.Getenv(flags.FlagToEnv("ETCD", "config-file"))
 	}
 
+	// Tip: 如果有配置文件，那么就从配置文件中加载；否则就从命令行加载
 	if cfg.configFile != "" {
 		err = cfg.configFromFile(cfg.configFile)
 		if lg := cfg.ec.GetLogger(); lg != nil {
