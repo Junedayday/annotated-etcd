@@ -281,7 +281,10 @@ type EtcdServer struct {
 
 // NewServer creates a new EtcdServer from the supplied configuration. The
 // configuration is considered static for the lifetime of the EtcdServer.
+
+//  transl. NewServer通过配置创建了一个服务器，整个生命周期都是配置都是静态的，即只能靠重启来更新
 func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
+	// 这里创建了2个默认key namespace
 	st := v2store.New(StoreClusterPrefix, StoreKeysPrefix)
 
 	var (
@@ -292,6 +295,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		cl *membership.RaftCluster
 	)
 
+	// 默认最大的请求为10MB
 	if cfg.MaxRequestBytes > recommendedMaxRequestBytes {
 		if cfg.Logger != nil {
 			cfg.Logger.Warn(
@@ -306,12 +310,15 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		}
 	}
 
+	// 创建数据文件夹，并测试能否在其中读写
 	if terr := fileutil.TouchDirAll(cfg.DataDir); terr != nil {
 		return nil, fmt.Errorf("cannot access data directory: %v", terr)
 	}
 
+	// Tip: WAL 是write ahead log的缩写，在很多高性能的软件中都会用到这个特性,先有个大致了解就行
 	haveWAL := wal.Exist(cfg.WALDir())
 
+	// snap 文件夹的初始化
 	if err = fileutil.TouchDirAll(cfg.SnapDir()); err != nil {
 		if cfg.Logger != nil {
 			cfg.Logger.Fatal(
@@ -325,6 +332,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	}
 	ss := snap.New(cfg.Logger, cfg.SnapDir())
 
+	// be: back end，后端保存数据库的db
 	bepath := cfg.backendPath()
 	beExist := fileutil.Exist(bepath)
 	be := openBackend(cfg)
@@ -335,6 +343,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		}
 	}()
 
+	// raft http 即raft协议的实现
 	prt, err := rafthttp.NewRoundTripper(cfg.PeerTLSInfo, cfg.peerDialTimeout())
 	if err != nil {
 		return nil, err
@@ -345,6 +354,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	)
 
 	switch {
+	// 加入到原有的集群
 	case !haveWAL && !cfg.NewCluster:
 		if err = cfg.VerifyJoinExisting(); err != nil {
 			return nil, err
@@ -370,7 +380,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		cl.SetBackend(be)
 		id, n, s, w = startNode(cfg, cl, nil)
 		cl.SetID(id, existingCluster.ID())
-
+	// 新建立一个集群
 	case !haveWAL && cfg.NewCluster:
 		if err = cfg.VerifyBootstrap(); err != nil {
 			return nil, err
@@ -405,7 +415,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		cl.SetBackend(be)
 		id, n, s, w = startNode(cfg, cl, cl.MemberIDs())
 		cl.SetID(id, cl.ID())
-
+	// WAL 机制，会尝试从snapshot启动
 	case haveWAL:
 		if err = fileutil.IsDirWriteable(cfg.MemberDir()); err != nil {
 			return nil, fmt.Errorf("cannot write to member directory: %v", err)
@@ -501,6 +511,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	sstats := stats.NewServerStats(cfg.Name, id.String())
 	lstats := stats.NewLeaderStats(id.String())
 
+	// 新建etcdserver这个对象
 	heartbeat := time.Duration(cfg.TickMs) * time.Millisecond
 	srv = &EtcdServer{
 		readych:     make(chan struct{}),
@@ -564,6 +575,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	}
 	srv.authStore = auth.NewAuthStore(srv.getLogger(), srv.be, tp, int(cfg.BcryptCost))
 
+	// kv 被封装在这里
 	srv.kv = mvcc.New(srv.getLogger(), srv.be, srv.lessor, srv.authStore, &srv.consistIndex, mvcc.StoreConfig{CompactionBatchLimit: cfg.CompactionBatchLimit})
 	if beExist {
 		kvindex := srv.kv.ConsistentIndex()
@@ -614,6 +626,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	}
 
 	// TODO: move transport initialization near the definition of remote
+	// rafthttp的传输层,与远端建立连接
 	tr := &rafthttp.Transport{
 		Logger:      cfg.Logger,
 		TLSInfo:     cfg.PeerTLSInfo,
@@ -737,6 +750,7 @@ func (s *EtcdServer) adjustTicks() {
 // should be implemented in goroutines.
 func (s *EtcdServer) Start() {
 	s.start()
+	// goAttach 是将传入的函数在 goroutine 中运行
 	s.goAttach(func() { s.adjustTicks() })
 	s.goAttach(func() { s.publish(s.Cfg.ReqTimeout()) })
 	s.goAttach(s.purgeFile)
@@ -775,6 +789,7 @@ func (s *EtcdServer) start() {
 		s.Cfg.SnapshotCatchUpEntries = DefaultSnapshotCatchUpEntries
 	}
 
+	// 基本上是初始化参数，用到了大量的channel来进行协程间通信
 	s.w = wait.New()
 	s.applyWait = wait.NewTimeList()
 	s.done = make(chan struct{})
@@ -812,6 +827,7 @@ func (s *EtcdServer) start() {
 
 	// TODO: if this is an empty log, writes all peer infos
 	// into the first entry
+	// 核心的运行函数
 	go s.run()
 }
 
@@ -940,6 +956,7 @@ func (s *EtcdServer) run() {
 	}
 
 	// asynchronously accept apply packets, dispatch progress in-order
+	// 根据名字大致了解到，这是一个先入先出的job调度器
 	sched := schedule.NewFIFOScheduler()
 
 	var (
@@ -1010,6 +1027,7 @@ func (s *EtcdServer) run() {
 		appliedi:  sn.Metadata.Index,
 	}
 
+	// go的defer函数，让整个代码整洁性提高很多
 	defer func() {
 		s.wgMu.Lock() // block concurrent waitgroup adds in goAttach while stopping
 		close(s.stopping)

@@ -230,12 +230,14 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 			return e, err
 		}
 	}
-	// 开始Server,并开启peers/clients/metrics
+	// Tip: 开始运行Server,并开启peers/clients/metrics
 	e.Server.Start()
 
+	// peer之间通信
 	if err = e.servePeers(); err != nil {
 		return e, err
 	}
+	// 与client的通信
 	if err = e.serveClients(); err != nil {
 		return e, err
 	}
