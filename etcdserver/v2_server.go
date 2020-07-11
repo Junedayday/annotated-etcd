@@ -24,6 +24,7 @@ import (
 
 type RequestV2 pb.Request
 
+// Tip: 大概率跟这里了相关，但是这个是v2版本，我们要找到的是v3版本
 type RequestV2Handler interface {
 	Post(ctx context.Context, r *RequestV2) (Response, error)
 	Put(ctx context.Context, r *RequestV2) (Response, error)

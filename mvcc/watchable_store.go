@@ -44,6 +44,8 @@ type watchable interface {
 	rev() int64
 }
 
+// kv的底层是watchableStore，寻找它的Read方法
+// Read方法返回了metricsTxnWrite
 type watchableStore struct {
 	*store
 

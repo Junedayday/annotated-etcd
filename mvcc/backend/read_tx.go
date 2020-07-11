@@ -128,6 +128,7 @@ func (rt *readTx) reset() {
 }
 
 // TODO: create a base type for readTx and concurrentReadTx to avoid duplicated function implementation?
+// Tip 3.10 这里就是Range的底层实现相关
 type concurrentReadTx struct {
 	buf     txReadBuffer
 	txMu    *sync.RWMutex

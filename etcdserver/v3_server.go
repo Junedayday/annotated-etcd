@@ -42,6 +42,7 @@ const (
 	traceThreshold                   = 100 * time.Millisecond
 )
 
+// Tip: raft协议,k-v结构
 type RaftKV interface {
 	Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeResponse, error)
 	Put(ctx context.Context, r *pb.PutRequest) (*pb.PutResponse, error)
@@ -50,6 +51,7 @@ type RaftKV interface {
 	Compact(ctx context.Context, r *pb.CompactionRequest) (*pb.CompactionResponse, error)
 }
 
+// Tip: Lease 租约
 type Lessor interface {
 	// LeaseGrant sends LeaseGrant request to raft and apply it after committed.
 	LeaseGrant(ctx context.Context, r *pb.LeaseGrantRequest) (*pb.LeaseGrantResponse, error)
@@ -67,6 +69,7 @@ type Lessor interface {
 	LeaseLeases(ctx context.Context, r *pb.LeaseLeasesRequest) (*pb.LeaseLeasesResponse, error)
 }
 
+// Tip： auth/user/role
 type Authenticator interface {
 	AuthEnable(ctx context.Context, r *pb.AuthEnableRequest) (*pb.AuthEnableResponse, error)
 	AuthDisable(ctx context.Context, r *pb.AuthDisableRequest) (*pb.AuthDisableResponse, error)
@@ -86,6 +89,7 @@ type Authenticator interface {
 	RoleList(ctx context.Context, r *pb.AuthRoleListRequest) (*pb.AuthRoleListResponse, error)
 }
 
+// Tip： 3.1 get入口的关键函数
 func (s *EtcdServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeResponse, error) {
 	trace := traceutil.New("range",
 		s.getLogger(),
@@ -118,6 +122,7 @@ func (s *EtcdServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeRe
 		return s.authStore.IsRangePermitted(ai, r.Key, r.RangeEnd)
 	}
 
+	// Tip 3.1.1 Range 方法是关键
 	get := func() { resp, err = s.applyV3Base.Range(ctx, nil, r) }
 	if serr := s.doSerialize(ctx, chk, get); serr != nil {
 		err = serr

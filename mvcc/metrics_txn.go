@@ -32,6 +32,7 @@ func newMetricsTxnWrite(tw TxnWrite) TxnWrite {
 	return &metricsTxnWrite{tw, 0, 0, 0, 0}
 }
 
+// Range方法要回头找tw.TxnWrite下的Range方法
 func (tw *metricsTxnWrite) Range(key, end []byte, ro RangeOptions) (*RangeResult, error) {
 	tw.ranges++
 	return tw.TxnWrite.Range(key, end, ro)

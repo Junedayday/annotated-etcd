@@ -94,6 +94,7 @@ type applierV3backend struct {
 }
 
 func (s *EtcdServer) newApplierV3Backend() applierV3 {
+	// applierV3 底层是 applierV3backend
 	base := &applierV3backend{s: s}
 	base.checkPut = func(rv mvcc.ReadView, req *pb.RequestOp) error {
 		return base.checkRequestPut(rv, req)
@@ -258,6 +259,7 @@ func (a *applierV3backend) DeleteRange(txn mvcc.TxnWrite, dr *pb.DeleteRangeRequ
 	return resp, nil
 }
 
+// Tip 3.3 查看这里的range实现
 func (a *applierV3backend) Range(ctx context.Context, txn mvcc.TxnRead, r *pb.RangeRequest) (*pb.RangeResponse, error) {
 	trace := traceutil.Get(ctx)
 

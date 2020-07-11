@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Tip 3.4 Range方法要在这里找了
 type storeTxnRead struct {
 	s  *store
 	tx backend.ReadTx
@@ -37,6 +38,7 @@ func (s *store) Read(trace *traceutil.Trace) TxnRead {
 	s.revMu.RLock()
 	// backend holds b.readTx.RLock() only when creating the concurrentReadTx. After
 	// ConcurrentReadTx is created, it will not block write transaction.
+	// Tip 3.6 查找tx的UnsafeRange函数的实现
 	tx := s.b.ConcurrentReadTx()
 	tx.RLock() // RLock is no-op. concurrentReadTx does not need to be locked after it is created.
 	firstRev, rev := s.compactMainRev, s.currentRev
@@ -125,7 +127,8 @@ func (tr *storeTxnRead) rangeKeys(key, end []byte, curRev int64, ro RangeOptions
 	if rev < tr.s.compactMainRev {
 		return &RangeResult{KVs: nil, Count: -1, Rev: 0}, ErrCompacted
 	}
-
+	
+	// key只在这里被用到
 	revpairs := tr.s.kvindex.Revisions(key, end, rev)
 	tr.trace.Step("range keys from in-memory index tree")
 	if len(revpairs) == 0 {
@@ -144,6 +147,7 @@ func (tr *storeTxnRead) rangeKeys(key, end []byte, curRev int64, ro RangeOptions
 	revBytes := newRevBytes()
 	for i, revpair := range revpairs[:len(kvs)] {
 		revToBytes(revpair, revBytes)
+		// Tip 3.5 读数据的关键函数
 		_, vs := tr.tx.UnsafeRange(keyBucketName, revBytes, nil, 0)
 		if len(vs) != 1 {
 			if tr.s.lg != nil {

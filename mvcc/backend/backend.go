@@ -145,6 +145,7 @@ func NewDefaultBackend(path string) Backend {
 	return newBackend(bcfg)
 }
 
+// Tip 3.9 backend的实现
 func newBackend(bcfg BackendConfig) *backend {
 	bopts := &bolt.Options{}
 	if boltOpenOptions != nil {

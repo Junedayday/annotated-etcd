@@ -237,6 +237,7 @@ type EtcdServer struct {
 	// applyV3 is the applier with auth and quotas
 	applyV3 applierV3
 	// applyV3Base is the core applier without auth or quotas
+	// Tip 3.2 applierV3的具体实现
 	applyV3Base applierV3
 	applyWait   wait.WaitTime
 
@@ -335,6 +336,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	// be: back end，后端保存数据库的db
 	bepath := cfg.backendPath()
 	beExist := fileutil.Exist(bepath)
+	// Tip 3.8 backend的实现
 	be := openBackend(cfg)
 
 	defer func() {
@@ -576,6 +578,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	srv.authStore = auth.NewAuthStore(srv.getLogger(), srv.be, tp, int(cfg.BcryptCost))
 
 	// kv 被封装在这里
+	// Tip 3.7 回到这里，发现传入的是srv.be
 	srv.kv = mvcc.New(srv.getLogger(), srv.be, srv.lessor, srv.authStore, &srv.consistIndex, mvcc.StoreConfig{CompactionBatchLimit: cfg.CompactionBatchLimit})
 	if beExist {
 		kvindex := srv.kv.ConsistentIndex()
